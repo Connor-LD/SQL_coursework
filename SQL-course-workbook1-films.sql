@@ -611,10 +611,8 @@ FROM
 	(
 	SELECT p.customer_id, a.district,SUM(amount) as customer_lifetime_value
 	FROM payment p 
-	LEFT JOIN customer c
-		ON c.customer_id=p.customer_id
-	LEFT JOIN address a
-		ON a.address_id=c.address_id
+	LEFT JOIN customer c ON c.customer_id=p.customer_id
+	LEFT JOIN address a ON a.address_id=c.address_id
 	GROUP BY p.customer_id, a.district
 	) as sub1
 GROUP BY district
@@ -641,7 +639,7 @@ SELECT title, payment_id, amount, c.name,
 					LEFT JOIN inventory i ON i.inventory_id = r.inventory_id
 					LEFT JOIN film f ON f.film_id = i.film_id
 					LEFT JOIN film_category fc ON fc.film_id = f.film_id
-					LEFT JOIN category c ON c.category_id = fc.category_id
+					LEFT JOIN category c1 ON c1.category_id = fc.category_id
 					WHERE c1.name=c.name)
 
 FROM payment p
@@ -650,7 +648,8 @@ LEFT JOIN inventory i ON i.inventory_id = r.inventory_id
 LEFT JOIN film f ON f.film_id = i.film_id
 LEFT JOIN film_category fc ON fc.film_id = f.film_id
 LEFT JOIN category c ON c.category_id = fc.category_id
-ORDER BY name;
+ORDER BY name
+;
 
 --  Later optimizated by partitions  (90msec vs 25sec!!)
 SELECT c.name, p.payment_id, p.amount, SUM(p.amount) OVER(PARTITION BY c.name) AS category_total
@@ -697,3 +696,72 @@ ORDER BY total DESC
 ;
 
 -- Score (13/14): Incorrect answers: #9 (misinterpreted question)
+
+
+-- *** Day 9:  Managing Tables and Databases
+SELECT COUNT(*) FROM film WHERE 'Behind the Scenes' = ANY(special_features);
+;
+
+
+-- *** Day 10: Window Functions
+-- Often an upgrade on correlated subqueries:
+-- Helpful for returning additional columns based on conditions. 
+-- i.e. what is the average for this location
+-- Over, Partition
+
+-- Example
+SELECT *,
+COUNT(*) OVER(PARTITION BY customer_id,staff_id)
+FROM payment
+ORDER BY 1;
+-- Round goes around entire partition
+SELECT *,
+ROUND(AVG(amount) OVER(PARTITION BY customer_id,staff_id),2)
+FROM payment
+ORDER BY 1;
+
+-- Challenge1: return list of movies inc. film_id, title, length, category, avg length for category, order by film_id
+SELECT f.film_id,f.title,f.length,c.name as category,
+ROUND(AVG(length) OVER(PARTITION BY c.name),2)
+FROM film f
+LEFT JOIN film_category fc ON f.film_id = fc.film_id
+LEFT JOIN category c ON c.category_id=fc.category_id
+ORDER BY film_id;
+
+-- Challenge2: return payment details incl # payments at same amount
+SELECT *,
+COUNT(*) OVER(PARTITION BY customer_id, amount)
+FROM payment
+ORDER BY customer_id,amount;
+
+
+-- *** DAY 11: Window Functions
+-- Write a query that returns customer name, # payments, and country
+-- Then add ranking for each customer by country
+-- dataset in previously computed view
+
+SELECT * FROM (
+	SELECT
+	name,
+	country,
+	COUNT(*),
+	RANK() OVER(PARTITION BY country ORDER BY COUNT(*) DESC) as rank
+	FROM customer_list
+	LEFT JOIN payment ON id=customer_id
+	GROUP BY name, country) sub
+WHERE rank BETWEEN 1 AND 3;
+
+SELECT * FROM customer_list;
+
+-- Challenge: Lead/Lag: Write a query that shows rev by day & previous day, calculate diff & % growth
+SELECT * FROM payment;
+
+SELECT
+SUM(amount),
+DATE(payment_date) as date,
+LAG(SUM(amount)) OVER(ORDER BY DATE(payment_date)) AS prev_day_amnt,
+SUM(amount) - LAG(SUM(amount)) OVER(ORDER BY DATE(payment_date)) AS diff,
+ROUND((SUM(amount) / LAG(SUM(amount)) OVER(ORDER BY DATE(payment_date)))-1,2) AS growth
+FROM payment
+GROUP BY date
+
