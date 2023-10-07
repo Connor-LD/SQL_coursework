@@ -763,5 +763,145 @@ LAG(SUM(amount)) OVER(ORDER BY DATE(payment_date)) AS prev_day_amnt,
 SUM(amount) - LAG(SUM(amount)) OVER(ORDER BY DATE(payment_date)) AS diff,
 ROUND((SUM(amount) / LAG(SUM(amount)) OVER(ORDER BY DATE(payment_date)))-1,2) AS growth
 FROM payment
-GROUP BY date
+GROUP BY date;
 
+-- Day 12: Grouping Sets, Rollups, & Self-joins
+SELECT
+TO_CHAR(payment_date,'Month') AS month,
+staff_id,
+SUM(amount)
+FROM payment
+GROUP BY
+	GROUPING SETS (
+	(month),
+	(staff_id),
+	(month,staff_id)
+	)
+ORDER BY 1,2;
+
+-- Challenge: Return sumary of customer spend by staff_id && total per customer
+-- Challenge 2: Add another column to calcualte percentage of total spend
+-- My issue:  Not sure how to write it.  Getting error that amount must be in group by or agg
+SELECT
+customer_id,
+staff_id,
+SUM(amount) as total,
+ROUND(SUM(amount) / (FIRST_VALUE(SUM(amount)) OVER(PARTITION BY customer_id
+							 ORDER BY SUM(amount) DESC)),2) AS percentage
+FROM payment
+GROUP BY
+	GROUPING SETS (
+	(customer_id),
+	(staff_id,customer_id)
+	)
+ORDER BY 1,2,3;
+
+
+-- Cube & Rollup
+-- subclauses within groupby
+-- rollup useful for natural heirarchies, like dates. 
+-- Cube for when there is no natural heirarchy: show agg by all possible combinations
+SELECT
+'Q'||TO_CHAR(payment_date,'Q') as quarter,
+EXTRACT(month from payment_date) as month,
+DATE(payment_date),
+SUM(amount) as total
+FROM payment
+GROUP BY ROLLUP(
+	'Q'||TO_CHAR(payment_date,'Q'),
+	EXTRACT(month from payment_date),
+	DATE(payment_date)
+	)
+
+-- Challenge:  Write a query to summarize sales by q, m, w, date
+SELECT
+'Q'||TO_CHAR(payment_date,'Q') as quarter,
+EXTRACT(month from payment_date) as month,
+TO_CHAR(payment_date,'w') as week_in_month,
+DATE(payment_date),
+SUM(amount) as total
+FROM payment
+GROUP BY ROLLUP(
+	'Q'||TO_CHAR(payment_date,'Q'),
+	EXTRACT(month from payment_date),
+	TO_CHAR(payment_date,'w'),
+	DATE(payment_date)
+	);
+
+-- Cube:
+SELECT
+customer_id,
+staff_id,
+DATE(payment_date),
+SUM(amount)
+FROM payment
+GROUP BY CUBE(
+	customer_id,
+	staff_id,
+	DATE(payment_date)
+)
+ORDER BY 1,2,3
+
+-- Challenge: Write a query that returns all grouping sets in all combinations of 
+-- customer_id, date and title with the aggregation of the payment amount.
+SELECT 
+p.customer_id,
+DATE(payment_date),
+title,
+SUM(amount) as total
+FROM payment p
+LEFT JOIN rental r ON r.rental_id=p.rental_id
+LEFT JOIN inventory i ON i.inventory_id=r.inventory_id
+LEFT JOIN film f ON f.film_id=i.film_id
+GROUP BY CUBE(
+	p.customer_id,
+	DATE(payment_date),
+	title
+	)
+ORDER BY 1,2,3
+
+-- Self-Join
+-- standard join with itself: i.e. when reporting managers of an employee where managers are already in employee table
+
+-- Create table
+CREATE TABLE employee (
+	employee_id INT,
+	name VARCHAR (50),
+	manager_id INT
+);
+
+INSERT INTO employee 
+VALUES
+	(1, 'Liam Smith', NULL),
+	(2, 'Oliver Brown', 1),
+	(3, 'Elijah Jones', 1),
+	(4, 'William Miller', 1),
+	(5, 'James Davis', 2),
+	(6, 'Olivia Hernandez', 2),
+	(7, 'Emma Lopez', 2),
+	(8, 'Sophia Andersen', 2),
+	(9, 'Mia Lee', 3),
+	(10, 'Ava Robinson', 3);
+
+-- Example
+SELECT
+emp.employee_id,
+emp.name as name,
+mgt.name as manager,
+mgt2.name as managers_manager
+FROM employee emp
+LEFT JOIN employee mgt ON emp.manager_id = mgt.employee_id
+LEFT JOIN employee mgt2 ON mgt.manager_id = mgt2.employee_id
+
+
+-- Cross Join
+-- All combinations of rows between two tables (incl duplicates)
+-- Ex
+SELECT
+t1.col1,
+t2.col1
+FROM table1 t1
+CROSS JOIN table2 t2
+
+-- Natural Join
+-- Join iff there exists 1 and only 1 id shared between two tables
