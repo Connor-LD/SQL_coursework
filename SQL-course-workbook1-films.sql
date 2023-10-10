@@ -714,13 +714,13 @@ SELECT *,
 COUNT(*) OVER(PARTITION BY customer_id,staff_id)
 FROM payment
 ORDER BY 1;
--- Round goes around entire partition
+-- Round() goes around entire partition
 SELECT *,
 ROUND(AVG(amount) OVER(PARTITION BY customer_id,staff_id),2)
 FROM payment
 ORDER BY 1;
 
--- Challenge1: return list of movies inc. film_id, title, length, category, avg length for category, order by film_id
+-- Challenge_1: return list of movies inc. film_id, title, length, category, avg length for category, order by film_id
 SELECT f.film_id,f.title,f.length,c.name as category,
 ROUND(AVG(length) OVER(PARTITION BY c.name),2)
 FROM film f
@@ -1232,21 +1232,48 @@ Task 11
 Difficulty: Advanced to Pro
 Task 11.1
 Write a query that outputs only the top earner per position_title including first_name and position_title and their salary.
-Question:
-What is the top earner with the position_title SQL Analyst?
-Answer:
-Sumner with 10085.90
-*/
-
-
-/*
+Question: What is the top earner with the position_title SQL Analyst?
+Answer: Sumner with 10085.90
 Task 11.2
 Add also the average salary per position_title.
 Task 11.3
 Remove those employees from the output of the previous query that has the same salary as the average of their position_title.
 These are the people that are the only ones with their position_title.
 */
+SELECT
+	first_name,
+	position_title,
+	salary,
+	(SELECT ROUND(AVG(salary),2) as avg_in_pos FROM employee e3
+WHERE e1.position_title=e3.position_title)
+FROM employee e1
+WHERE salary = (SELECT MAX(salary)
+			   FROM employee e2
+			   WHERE e1.position_title=e2.position_title)
+AND salary<>(SELECT ROUND(AVG(salary),2) as avg_in_pos FROM employee e3
+WHERE e1.position_title=e3.position_title);
 
+	
+-- Solution 2 w/ CTE
+WITH PositionStatistics AS (
+    SELECT
+        position_title,
+        MAX(salary) AS max_salary,
+        ROUND(AVG(salary), 2) AS avg_salary
+    FROM v_employee
+    GROUP BY position_title
+)
+SELECT
+    ve.first_name,
+    ve.position_title,
+    ve.salary,
+    ps.avg_salary AS pos_avg_salary
+FROM v_employee ve
+INNER JOIN PositionStatistics ps
+    ON ve.position_title = ps.position_title
+    AND ve.salary = ps.max_salary
+WHERE ve.salary <> ps.avg_salary
+ORDER BY ve.position_title;
 
 /*
 Task 12
@@ -1259,6 +1286,20 @@ grouped by all meaningful combinations of
 division, department, position_title.
 Consider the levels of hierarchies in a meaningful way.
 */
+SELECT
+d.division,
+d.department,
+e.position_title,
+SUM(e.salary) AS total_salary,
+COUNT(*) AS employee_count,
+ROUND(AVG(e.salary), 2) AS avg_salary
+FROM employee e
+NATURAL JOIN department d
+GROUP BY ROLLUP(
+	d.division,
+	d.department,
+	e.position_title)
+ORDER BY 1,2,3;
 
 
 /*
@@ -1271,7 +1312,11 @@ Which employee (emp_id) is in rank 7 in the department Analytics?
 Answer:
 emp_id 26
 */
-
+SELECT
+e.emp_id,e.position_title,d.department,e.salary,
+RANK() OVER(PARTITION BY d.department ORDER BY e.salary DESC) as salary_rank
+FROM employee e
+NATURAL JOIN department d;
 
 /*
 Task 14
@@ -1283,3 +1328,189 @@ Which employee (emp_id) is the top earner in the department Finance?
 Answer:
 emp_id 8
 */
+SELECT * 
+FROM (
+	SELECT
+	e.emp_id,e.position_title,d.department,e.salary,
+	RANK() OVER(PARTITION BY d.department ORDER BY e.salary DESC) as salary_rank
+	FROM employee e
+	NATURAL JOIN department d) sub
+WHERE salary_rank = 1;
+
+
+-- ***Day 14: stored procedures, transactions, and UDFs
+-- UDF:
+-- CREATE FUNCTION <function_name> (param1,param2,...)
+-- 	RETURNS return_datatype
+-- 	LANGUAGE plpgsql  others{sql,c,python, etc}
+-- AS
+-- $$
+-- DECLARE
+-- <decalre variables>;
+-- FUNCTION
+-- <function_definition>;
+-- END;
+-- $$
+
+CREATE FUNCTION first_func(p1 INT,p2 INT)
+	RETURNS INT
+	LANGUAGE plpgsql
+AS
+$$
+DECLARE
+c3 INT;
+BEGIN
+SELECT p1+p2+3
+	INTO stored_variable;
+RETURN stored_variable;
+END;
+$$
+
+
+CREATE FUNCTION count_rr(min_rr decimal(4,2), max_rr decimal(4,2))
+RETURNS INT
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+movie_count INT;
+BEGIN
+SELECT COUNT(*)
+INTO movie_count 
+FROM film WHERE rental_rate BETWEEN min_rr AND max_rr;
+RETURN movie_count;
+END;
+$$ 
+
+-- TEST
+SELECT count_rr(0,2);
+
+-- Challenge: Create a function that takes customers first and last names and returns # payments made
+CREATE OR REPLACE FUNCTION count_payments(fname TEXT,lname TEXT)
+RETURNS INT
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+count_payments INT;
+BEGIN
+SELECT
+COUNT(*)
+INTO count_payments
+FROM payment p
+LEFT JOIN customer c ON c.customer_id=p.customer_id
+WHERE c.first_name = fname AND c.last_name = lname;
+RETURN count_payments;
+END;
+$$
+
+-- Test
+SELECT count_payments('AMY','LOPEZ');
+
+-- TEST 2
+SELECT
+first_name,
+last_name,
+count_payments(first_name,last_name)
+FROM customer;
+
+-- Transactions
+BEGIN TRANSACTION;  
+-- ALSO JUST BEGIN
+OPERATION1;
+OPERATION2;
+-- Not visible in other sessions  
+
+-- Example
+BEGIN;
+UPDATE acc_balance
+SET amount = amount - 100
+WHERE id=1;
+SAVEPOINT op1;
+UPDATE acc_balance
+SET amount = amount + 100
+WHERE id=2;
+SAVEPOINT op2;
+
+ROLLBACK TO SAVEPOINT op1; 
+RELEASE SAVEPOINT op2; 
+COMMIT;
+-- commit posts the update so it is visible in other sessions.
+-- rollback undoes everything in transaction that hasn't been committed yet.  Ends transaction
+-- rollback to savepoint does NOT end transaction  
+-- release savepoint = delete savepoint
+
+
+-- Stored Procedures
+-- UDFs cannot utilize transactions
+
+CREATE OR REPLACE PROCEDURE bank_transfer(transfer_amount INT,sender_id INT,recipient_id INT)
+LANGUAGE plpgsql
+AS
+$$
+BEGIN
+-- subtract balance
+UPDATE acc_balance
+SET amount = amount - transfer_amount
+WHERE id = sender_id;
+-- add balance
+UPDATE acc_balance
+SET amount = amount + transfer_amount
+WHERE id = recipient_id;
+COMMIT;
+END;
+$$
+
+-- Test
+CALL bank_transfer (500,1,2)
+
+
+-- Challenge
+-- Create sp called emp_swap that swaps the position and salary of 2 employees.  test with emp_ids {2,3}
+
+CREATE OR REPLACE PROCEDURE emp_swap(emp_1,emp_2)
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+salary1 DECIMAL(8,2);
+salary2 DECIMAL(8,2);
+position1 TEXT;
+position2 TEXT;
+BEGIN;
+-- store values in variables
+SELECT salary
+INTO salary1
+FROM employee
+WHERE emp_id = 1;
+SELECT salary
+INTO salary2
+FROM employee
+WHERE emp_id = 2;
+SELECT position_title
+INTO position1
+FROM employee
+WHERE emp_id = 1;
+SELECT position_title
+INTO position2
+FROM employee
+WHERE emp_id = 2;
+-- update table
+UPDATE employee
+SET salary = salary2
+WHERE emp_id=1;
+UPDATE employee
+SET salary = salary1
+WHERE emp_id=2;
+UPDATE employee
+SET position_title = position2
+WHERE emp_id=1;
+UPDATE employee
+SET position_title = position1
+WHERE emp_id=2;
+
+COMMIT;
+END;
+$$
+
+CALL emp_swap(2,3)
