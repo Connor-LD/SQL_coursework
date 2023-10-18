@@ -42,3 +42,23 @@ ON b.ticket_no = t.ticket_no
 	AND b.flight_id = t.flight_id
 GROUP BY seat_no
 ORDER BY avg_cost DESC;
+
+
+-- Day 15: Indexing assignment
+SELECT * FROM flights f2
+WHERE flight_no < (SELECT MAX(flight_no)
+				  FROM flights f1
+				   WHERE f1.departure_airport=f2.departure_airport
+				   )
+-- base runtime: 12.9s
+-- index - flight_id: 12.9s
+-- index - flight_no: 10.7s
+-- index - depart.air: 12.9s
+-- index - dept+fligt_no: 0.16s. !!!!!
+-- index - fligt_No+dept: 0.24s
+
+DROP INDEX index_depart_flightNo_flights;
+CREATE INDEX index_depart_flightNo_flights
+ON flights (flight_no,departure_airport);
+
+SELECT * FROM flights

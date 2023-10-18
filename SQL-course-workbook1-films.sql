@@ -1513,4 +1513,94 @@ COMMIT;
 END;
 $$
 
+-- Test
 CALL emp_swap(2,3)
+
+-- ***Day 15: user mgmt, indexes, partitioning, and query optimization
+
+/*
+CREATE USER test_username
+WITH PASSWORD test_password
+
+CREATE ROLE test_role
+WITH LOGIN PASSWORD test_password
+
+DROP USER
+DROP ROLE
+*/
+
+-- ex:
+CREATE USER sarah
+WITH PASSWORD 'sarah1234';
+
+CREATE ROLE alex
+WITH LOGIN PASSWORD 'alex1234';
+
+/*
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, USAGE, ALL
+ON customer <table name>
+ON ALL TABLES IN SCHEMA <schema_name>
+TO sarah <user> (optional) WITH GRANT OPTION
+
+super user and owner can grant privilege
+
+REVOKE <GRANT OPTION FOR> privilege
+ON <database_object, or database. >
+FROM <user, role, public>
+GRANTED BY <user, role>
+ 
+ 
+GRANT <role> TO <user>;  
+ 
+PRIVILEGES:  SELECT, INSERT, UPDATE, DELETE, TRUNCATE, USAGE, EXECUTE, CONNECT
+
+traditionally, grant usage first so everything is visible.  Then grant other privileges. 
+
+Bonus: can grant permission to create databases.
+ALTER USER <user> CREATEDB;  
+*/
+
+-- Challenge
+-- Create user
+CREATE USER mia
+WITH PASSWORD 'mia123';
+ 
+-- Create role
+CREATE ROLE analyst_emp;
+ 
+-- Grant privileges
+GRANT SELECT
+ON ALL TABLES IN SCHEMA public
+TO analyst_emp;
+ 
+GRANT INSERT,UPDATE
+ON employees
+TO analyst_emp;
+ 
+-- Add permission to create databases
+ALTER ROLE analyst_emp CREATEDB;
+ 
+-- Assign role to user
+GRANT analyst_emp TO mia;
+
+
+
+
+
+
+-- CREATING INDEX
+CREATE INDEX <index_name>
+ON <table_name> [USING method]
+	(
+	column name,
+	[,...]
+	);
+	
+	
+	
+-- Assignment
+SELECT * FROM flights f2
+WHERE flight_no < (SELECT MAX(flight_no)
+				  FROM flights f1
+				   WHERE f1.departure_airport=f2.departure_airport
+				   )
